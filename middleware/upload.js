@@ -8,17 +8,25 @@ const upload = multer({
     },
 
     fileFilter: (req, file, cb) => {
+        console.log('FILE NAME:', file.originalname);
+        console.log('MIME TYPE:', file.mimetype);
+
         const allowed = [
             'image/jpeg',
-            'image/jpg',
             'image/png',
+            'application/octet-stream',
         ];
 
         if (allowed.includes(file.mimetype)) {
-            cb(null, true);
-        } else {
-            cb(new Error('Only JPEG/JPG/PNG allowed'), false);
+            return cb(null, true);
         }
+
+        return cb(
+            new Error(
+                `Invalid image type: ${file.mimetype}. Only JPEG/PNG allowed`
+            ),
+            false
+        );
     },
 });
 

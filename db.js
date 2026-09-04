@@ -1,12 +1,19 @@
 // db.js — SQL Server version
 const sql = require('mssql');
+const {
+    DB_SERVER,
+    DB_USER,
+    DB_PASSWORD,
+    DB_DATABASE,
+    DB_PORT,
+} = require('./config/config');
 
 const config = {
-    server: 'ICON-DC',              // ✅ your server name
-    user: 'sa',                   // ✅ your user id
-    password: 'IIT_lis@6061',        // ✅ your password
-    database: 'Finance_Management',   // ✅ your database
-    port: 1433,                   // ✅ default SQL Server port
+    server: DB_SERVER,              // ✅ your server name
+    user: DB_USER,                   // ✅ your user id
+    password: DB_PASSWORD,        // ✅ your password
+    database: DB_DATABASE,   // ✅ your database
+    port: DB_PORT,                   // ✅ default SQL Server port
     options: {
         encrypt: false,  // ✅ false for local network
         trustServerCertificate: true,   // ✅ required for SQL Server
