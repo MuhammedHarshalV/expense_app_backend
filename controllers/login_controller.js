@@ -282,6 +282,7 @@ const refreshTokenApi = async (req, res) => {
         });
     }
 };
+//logout api
 const logoutApi = async (req, res) => {
     try {
 

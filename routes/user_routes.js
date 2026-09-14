@@ -20,7 +20,7 @@ router.get(
 router.use(authenticateToken);
 // CREATE
 router.post(
-    '/',
+    '/create-user',
     requireAdmin,
     upload.single('user_profile_photo'),
     createUser
@@ -29,7 +29,7 @@ router.post(
 
 // GET ALL
 router.get(
-    '/',
+    '/all_users',
     requireAdmin,
     getUser
 );

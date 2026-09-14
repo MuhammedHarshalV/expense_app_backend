@@ -10,7 +10,8 @@ const {
     getSingleClinic,
     updateClinic,
     deleteClinic,
-    getClinics
+    getClinics,
+    searchClinics
 
 } = require('../controllers/clinic_add_remove_controllers');
 // GET PHOTO
@@ -32,7 +33,7 @@ router.post(
 
 // GET ALL
 router.get(
-    '/',
+    '/all-clinics',
 
     getClinics
 );
@@ -57,6 +58,12 @@ router.patch(
 router.delete(
     '/clinicRemoval',
     deleteClinic
+);
+
+// search
+router.get(
+    '/search',
+    searchClinics
 );
 
 module.exports = router;

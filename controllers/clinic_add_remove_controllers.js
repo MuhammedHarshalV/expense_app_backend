@@ -589,6 +589,125 @@ const deleteClinic = async (req, res) => {
 };
 
 
+//clinic search
+const searchClinics = async (req, res) => {
+    try {
+        const search = (req.query.search || '').trim();
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.min(
+            Math.max(parseInt(req.query.limit) || 10, 1),
+            50
+        );
+
+        // Minimum 2 characters
+        if (search.length < 2) {
+            return res.status(400).json({
+                success: false,
+                message: 'Enter at least 2 characters to search',
+                data: [],
+            });
+        }
+
+        const offset = (page - 1) * limit;
+
+        const pool = await poolPromise;
+
+        // Count matching unique clinic + place combinations
+        const countResult = await pool.request()
+            .input(
+                'search',
+                sql.NVarChar(150),
+                `%${search}%`
+            )
+            .query(`
+                SELECT COUNT(*) AS total
+                FROM (
+                    SELECT
+                        clinic_name,
+                        clinic_place
+                    FROM AllClinicDetails
+                    WHERE
+                        clinic_name LIKE @search
+                        OR clinic_place LIKE @search
+                    GROUP BY
+                        clinic_name,
+                        clinic_place
+                ) AS clinics
+            `);
+
+        const totalCount =
+            countResult.recordset[0].total;
+
+        const totalPages =
+            Math.ceil(totalCount / limit);
+
+        const result = await pool.request()
+            .input(
+                'search',
+                sql.NVarChar(150),
+                `%${search}%`
+            )
+            .input('offset', sql.Int, offset)
+            .input('limit', sql.Int, limit)
+            .query(`
+                WITH UniqueClinics AS (
+                    SELECT
+                        MIN(clinic_id) AS clinic_id,
+                        clinic_name,
+                        clinic_place
+                    FROM AllClinicDetails
+                    WHERE
+                        clinic_name LIKE @search
+                        OR clinic_place LIKE @search
+                    GROUP BY
+                        clinic_name,
+                        clinic_place
+                )
+
+                SELECT
+                    clinic_id,
+                    clinic_name,
+                    clinic_place
+                FROM UniqueClinics
+                ORDER BY clinic_name, clinic_place
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY
+            `);
+
+        const clinics = result.recordset.map(
+            (clinic) => ({
+                clinic_id: clinic.clinic_id,
+                clinic_name: clinic.clinic_name,
+                clinic_place: clinic.clinic_place,
+                clinic_photo:
+                    `${BASE_URL}/api/clinic/${clinic.clinic_id}/photo`,
+            })
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Clinics fetched successfully',
+            pagination: {
+                total_count: totalCount,
+                current_page: page,
+                total_pages: totalPages,
+                limit: limit,
+            },
+            data: clinics,
+        });
+
+    } catch (err) {
+        console.error(
+            'Search clinics error:',
+            err
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: err.message,
+        });
+    }
+};
 
 module.exports = {
     addClinic,
@@ -596,5 +715,6 @@ module.exports = {
     getSingleClinic,
     updateClinic,
     deleteClinic,
-    getClinics
+    getClinics,
+    searchClinics
 };
