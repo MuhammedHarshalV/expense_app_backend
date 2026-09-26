@@ -552,27 +552,58 @@ const deleteClinic = async (req, res) => {
         }
 
         const pool = await poolPromise;
+        transaction = new sql.Transaction(pool);
+        await transaction.begin();
 
-        const result = await pool.request()
+        // Check clinic belongs to logged-in user
+        const clinicResult = await new sql.Request(transaction)
             .input('clinic_id', sql.Int, clinicId)
             .input('user_id', sql.Int, userId)
             .query(`
-                DELETE FROM AllClinicDetails
-
-                OUTPUT
-                    DELETED.clinic_id
-
+                SELECT clinic_id
+                FROM AllClinicDetails
                 WHERE clinic_id = @clinic_id
                   AND user_id = @user_id
             `);
 
-        if (result.recordset.length === 0) {
+        if (clinicResult.recordset.length === 0) {
+            await transaction.rollback();
+
             return res.status(404).json({
                 success: false,
                 message: 'Clinic not found',
             });
         }
 
+        // Delete all expenses related to this clinic
+        const expenseDeleteResult = await new sql.Request(transaction)
+            .input('clinic_id', sql.Int, clinicId)
+            .query(`
+                DELETE FROM all_expense_details
+                WHERE clinic_id = @clinic_id
+            `);
+
+        // Delete clinic
+        const deleteResult = await new sql.Request(transaction)
+            .input('clinic_id', sql.Int, clinicId)
+            .input('user_id', sql.Int, userId)
+            .query(`
+                DELETE FROM AllClinicDetails
+                OUTPUT DELETED.clinic_id
+                WHERE clinic_id = @clinic_id
+                  AND user_id = @user_id
+            `);
+
+        if (deleteResult.recordset.length === 0) {
+            await transaction.rollback();
+
+            return res.status(404).json({
+                success: false,
+                message: 'Clinic not found',
+            });
+        }
+
+        await transaction.commit();
         return res.status(200).json({
             success: true,
             message: 'Clinic deleted successfully',

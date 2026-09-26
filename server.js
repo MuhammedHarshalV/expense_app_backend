@@ -3,6 +3,10 @@ const multer = require('multer');
 const userRoutes = require('./routes/user_routes');
 const authRoutes = require('./routes/auth_routes');
 const clinicRoutes = require('./routes/clinic_routes');
+const expenseRoutes = require('./routes/expense_routes');
+const historyRoutes = require('./routes/history_routes');
+
+
 
 const { BASE_URL, PORT } = require('./config/config');
 const app = express();
@@ -13,6 +17,9 @@ app.use(express.json());
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/clinic', clinicRoutes);
+app.use('/api/expense', expenseRoutes);
+app.use('/api/expense', historyRoutes);
+
 
 app.get('/', (req, res) => {
     res.json({

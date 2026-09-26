@@ -7,7 +7,7 @@ const { BASE_URL } = require('../config/config');
 //create users
 const createUser = async (req, res) => {
     try {
-        // ✅ match Postman text keys
+        //  match Postman text keys
         const name = req.body.user_name;
         const phone = req.body.user_phone_number;
         const pin = req.body.user_pin;
