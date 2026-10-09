@@ -5,12 +5,12 @@ const requireAdmin = require('../middleware/admin');
 const router = express.Router();
 
 const {
-    createUser,
-    getUser,
+    // createUser,
+    // getUser,
     getSingleUser,
     updateUser,
     getUserPhoto,
-    deleteUser,
+    // deleteUser,
 } = require('../controllers/user_controllers');
 router.get(
     '/:id/photo',
@@ -19,20 +19,20 @@ router.get(
 
 router.use(authenticateToken);
 // CREATE
-router.post(
-    '/create-user',
-    requireAdmin,
-    upload.single('user_profile_photo'),
-    createUser
-);
+// router.post(
+//     '/create-user',
+//     requireAdmin,
+//     upload.single('user_profile_photo'),
+//     createUser
+// );
 
 
 // GET ALL
-router.get(
-    '/all_users',
-    requireAdmin,
-    getUser
-);
+// router.get(
+//     '/all_users',
+//     requireAdmin,
+//     getUser
+// );
 
 // // GET PHOTO
 // router.get(
@@ -56,10 +56,10 @@ router.patch(
 
 
 // DELETE
-router.delete(
-    '/:id',
-    requireAdmin,
-    deleteUser
-);
+// router.delete(
+//     '/:id',
+//     requireAdmin,
+//     deleteUser
+// );
 
 module.exports = router;

@@ -433,10 +433,6 @@ const patchExpense = async (req, res) => {
                 'expense_date',
                 sql.Date,
                 newExpenseDate
-            ).input(
-                'entry_date',
-                sql.DateTime,
-                entryDate
             )
 
             .query(`

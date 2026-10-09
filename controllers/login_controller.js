@@ -13,9 +13,24 @@ const jwt = require('jsonwebtoken');
 
 const loginApi = async (req, res) => {
     try {
+        console.log('===== LOGIN API =====');
+        console.log('Request body:', req.body);
 
+        console.log(
+            'Access secret available:',
+            !!JWT_ACCESS_SECRET
+        );
+
+        console.log(
+            'Refresh secret available:',
+            !!JWT_REFRESH_SECRET
+        );
+
+        console.log(
+            'BASE_URL:',
+            BASE_URL
+        );
         const {
-            user_phone_number,
             user_pin
         } = req.body;
 
@@ -23,12 +38,12 @@ const loginApi = async (req, res) => {
         // VALIDATION
         // ==========================================
 
-        if (!user_phone_number) {
-            return res.status(400).json({
-                success: false,
-                message: 'user_phone_number is required',
-            });
-        }
+        // if (!user_phone_number) {
+        //     return res.status(400).json({
+        //         success: false,
+        //         message: 'user_phone_number is required',
+        //     });
+        // }
 
         if (!user_pin) {
             return res.status(400).json({
@@ -44,32 +59,33 @@ const loginApi = async (req, res) => {
         // ==========================================
 
         const result = await pool.request()
-            .input(
-                'phone',
-                sql.NVarChar,
-                user_phone_number
-            )
+            // .input(
+            //     'phone',
+            //     sql.NVarChar,
+            //     user_phone_number
+            // )
             .input(
                 'pin',
                 sql.Int,
                 parseInt(user_pin)
             )
             .query(`
-                SELECT
-                    user_emp_key,
-                    user_name,
-                    user_phone_number,
-                    user_profile_photo,
-                    user_pin,
-                    is_admin,
-                    user_email,
-                    date_of_birth,
-                    user_location,
-                    user_about,
-                    user_gender
-                FROM user_details
-                WHERE user_phone_number = @phone
-                AND user_pin = @pin
+               select 
+usr.Usr_EmpId,
+acc.AhMst_pName,
+acc.AhMst_Phno,
+acc.AhMst_mobile,
+acc.AhMst_Email,
+acc.AhMst_Note,
+acc.AhMst_Image,
+acc.AhMst_Ismale,
+acc.AhMst_Address,
+usr.Usr_grp,
+acc.AhMst_Dob
+from Users usr
+left join AccountHeads_Mst acc
+on usr.Usr_EmpId = acc.AhMst_Key
+where usr.Usr_EmpKey= @pin
             `);
 
         // ==========================================
@@ -79,7 +95,7 @@ const loginApi = async (req, res) => {
         if (result.recordset.length === 0) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid phone number or PIN',
+                message: 'Invalid PIN',
             });
         }
 
@@ -91,8 +107,8 @@ const loginApi = async (req, res) => {
 
         const accessToken = jwt.sign(
             {
-                user_emp_key: user.user_emp_key,
-                is_admin: user.is_admin,
+                user_emp_key: user.Usr_EmpId,
+                is_admin: user.Usr_grp == "Administrator" ? true : false,
             },
             JWT_ACCESS_SECRET,
             {
@@ -106,7 +122,7 @@ const loginApi = async (req, res) => {
 
         const refreshToken = jwt.sign(
             {
-                user_emp_key: user.user_emp_key,
+                user_emp_key: user.Usr_EmpId,
             },
             JWT_REFRESH_SECRET,
             {
@@ -118,12 +134,12 @@ const loginApi = async (req, res) => {
         // ==========================================
         // PROFILE PHOTO URL
         // ==========================================
-        const formattedDateOfBirth = user.date_of_birth
-            ? user.date_of_birth.toISOString().split('T')[0]
+        const formattedDateOfBirth = user.AhMst_Dob
+            ? user.AhMst_Dob.toISOString().split('T')[0]
             : null;
         const profilePhotoUrl =
-            user.user_profile_photo
-                ? `${BASE_URL}/api/users/${user.user_emp_key}/photo`
+            user.AhMst_Image
+                ? `${BASE_URL}/api/users/${user.Usr_EmpId}/photo`
                 : null;
 
         // ==========================================
@@ -136,15 +152,15 @@ const loginApi = async (req, res) => {
             access_token: accessToken,
             refresh_token: refreshToken,
             data: {
-                user_emp_key: user.user_emp_key,
-                user_name: user.user_name,
-                user_phone_number: user.user_phone_number,
-                user_email: user.user_email,
+                user_emp_key: user.Usr_EmpId,
+                user_name: user.AhMst_pName,
+                user_phone_number: user.AhMst_mobile,
+                user_email: user.AhMst_Email,
                 date_of_birth: formattedDateOfBirth,
-                user_location: user.user_location,
-                user_about: user.user_about,
-                user_gender: user.user_gender,
-                is_admin: user.is_admin,
+                user_location: user.AhMst_Address,
+                user_about: user.AhMst_Note,
+                user_gender: user.AhMst_Ismale,
+                is_admin: user.Usr_grp == "Administrator" ? true : false,
                 profile_photo_url: profilePhotoUrl,
             },
         });
@@ -209,12 +225,10 @@ const refreshTokenApi = async (req, res) => {
             )
             .query(`
                 SELECT
-                    user_emp_key,
-                    user_name,
-                    user_phone_number,
-                    is_admin
-                FROM user_details
-                WHERE user_emp_key = @id
+                    Usr_EmpId,
+                    Usr_grp
+                FROM Users
+                WHERE Usr_EmpId = @id
             `);
 
         if (result.recordset.length === 0) {
@@ -233,8 +247,8 @@ const refreshTokenApi = async (req, res) => {
 
         const newAccessToken = jwt.sign(
             {
-                user_emp_key: user.user_emp_key,
-                is_admin: user.is_admin,
+                user_emp_key: user.Usr_EmpId,
+                is_admin: user.Usr_grp == "Administrator" ? true : false,
             },
             JWT_ACCESS_SECRET,
             {
@@ -245,7 +259,7 @@ const refreshTokenApi = async (req, res) => {
 
         const newRefreshToken = jwt.sign(
             {
-                user_emp_key: decoded.user_emp_key,
+                user_emp_key: user.Usr_EmpId,
 
             },
             JWT_REFRESH_SECRET,

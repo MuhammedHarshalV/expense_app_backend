@@ -112,7 +112,7 @@ const getExpenseHistory = async (req, res) => {
 
         if (endDate) {
             whereClause += `
-                AND e.expense_date <= @end_date
+               AND e.expense_date <= DATEADD(DAY, 1, @end_date)
             `;
         }
 
