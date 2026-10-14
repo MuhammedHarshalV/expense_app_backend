@@ -406,7 +406,7 @@ const patchExpense = async (req, res) => {
 
         // Keep old photo if new file not provided
         const newBillPhoto =
-            req.file?.buffer ?? oldExpense.bill_photo;
+            req.file?.buffer ?? null;
 
         // Update expense
         const updateResult = await new sql.Request(transaction)

@@ -37,7 +37,7 @@ const config = {
         process.env.DB_DATABASE,
 
     DB_PORT:
-        Number(process.env.DB_PORT) || 1433,
+        Number(process.env.DB_PORT),
 };
 
 

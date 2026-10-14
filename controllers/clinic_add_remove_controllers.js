@@ -466,7 +466,7 @@ const updateClinic = async (req, res) => {
 
         const photoBuffer = req.file
             ? req.file.buffer
-            : current.clinic_photo;
+            : null;
 
         const result = await pool.request()
             .input('clinic_id', sql.Int, clinicId)

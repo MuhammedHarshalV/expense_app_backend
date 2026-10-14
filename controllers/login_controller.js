@@ -31,19 +31,24 @@ const loginApi = async (req, res) => {
             BASE_URL
         );
         const {
-            user_pin
+            user_pin,
+            device_id,
+            device_name
         } = req.body;
 
-        // ==========================================
-        // VALIDATION
-        // ==========================================
+        if (!device_id || !device_id.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'device_id is required',
+            });
+        }
 
-        // if (!user_phone_number) {
-        //     return res.status(400).json({
-        //         success: false,
-        //         message: 'user_phone_number is required',
-        //     });
-        // }
+        if (!device_name || !device_name.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: 'device_name is required',
+            });
+        }
 
         if (!user_pin) {
             return res.status(400).json({
@@ -100,6 +105,146 @@ where usr.Usr_EmpKey= @pin
         }
 
         const user = result.recordset[0];
+        const empId = user.Usr_EmpId;
+
+        // ==========================================
+        // GET LOGIN DETAILS FOR THIS EMPLOYEE
+        // ==========================================
+
+        const loginDetailsResult = await pool.request()
+            .input(
+                'emp_id',
+                sql.Int,
+                empId
+            )
+            .query(`
+                SELECT
+                    emp_id,
+                    device_id,
+                    device_name,
+                    login_accept,
+                    is_send
+                FROM expense_login_details
+                WHERE emp_id = @emp_id
+            `);
+
+        const loginDetails = loginDetailsResult.recordset;
+
+        // ==========================================
+        // SCENARIO 4
+        // SAME DEVICE ALREADY EXISTS
+        //
+        // -> NO INSERT
+        // -> CONTINUE LOGIN
+        // ==========================================
+
+        const sameDevice = loginDetails.find(
+            (item) =>
+                String(item.device_id).trim() ===
+                String(device_id).trim()
+        );
+
+        if (sameDevice) {
+            console.log(
+                'Same device already registered. Continue login.'
+            );
+        }
+
+        // ==========================================
+        // SCENARIO 2
+        // NO EMPLOYEE LOGIN RECORD EXISTS
+        //
+        // -> INSERT DEVICE
+        // -> CONTINUE LOGIN
+        // ==========================================
+
+        else if (loginDetails.length === 0) {
+
+            await insertLoginDevice(
+                pool,
+                empId,
+                device_name,
+                device_id
+            );
+        }
+
+        // ==========================================
+        // SCENARIO 3
+        // EMPLOYEE EXISTS AND LOGIN_ACCEPT = TRUE
+        //
+        // -> INSERT NEW DEVICE
+        // -> CONTINUE LOGIN
+        // ==========================================
+
+        else {
+            const acceptedLogin = loginDetails.find(
+                (item) =>
+                    item.login_accept === true ||
+                    item.login_accept === 1
+            );
+
+            if (acceptedLogin) {
+
+                await insertLoginDevice(
+                    pool,
+                    empId,
+                    device_name,
+                    device_id
+                );
+            }
+            else {
+                // ==========================================
+                // SCENARIO 1
+                // EMPLOYEE ALREADY LOGGED IN
+                // FROM ANOTHER DEVICE
+                //
+                // login_accept is NOT true
+                // -> DON'T INSERT
+                // -> REJECT LOGIN
+                // ==========================================
+
+                const loggedDeviceNames = loginDetails
+                    .map((item) => item.device_name)
+                    .filter(
+                        (name) =>
+                            name !== null &&
+                            name !== undefined &&
+                            String(name).trim() !== ''
+                    );
+                const deviceNamesString = loggedDeviceNames.join(', ');
+                await pool
+                    .request()
+                    .input(
+                        'emp_id',
+                        sql.Int,
+                        empId
+                    )
+                    .query(`
+        UPDATE expense_login_details
+        SET
+            is_send = 1,
+            login_accept_until = DATEADD(
+                MINUTE,
+                10,
+                GETDATE()
+            )
+        WHERE emp_id = @emp_id
+    `);
+
+                return res.status(409).json({
+                    success: false,
+                    message: `This account is already logged in on ${deviceNamesString}. ` +
+                        `Send a login request to one of these devices for approval, ` +
+                        `then log in again within 10 minutes.`,
+                });
+
+            }
+        }
+
+
+
+
+
 
         // ==========================================
         // GENERATE ACCESS TOKEN
@@ -175,10 +320,64 @@ where usr.Usr_EmpKey= @pin
         });
     }
 };
+const insertLoginDevice = async (
+    pool,
+    empId,
+    deviceName,
+    deviceId
+) => {
+    try {
+        await pool
+            .request()
+            .input('emp_id', sql.Int, empId)
+            .input(
+                'device_name',
+                sql.NVarChar,
+                String(deviceName).trim()
+            )
+            .input(
+                'device_id',
+                sql.NVarChar,
+                String(deviceId).trim()
+            )
+            .query(`
+            INSERT INTO expense_login_details
+            (
+                emp_id,
+                device_name,
+                device_id,
+                login_accept,
+                login_accept_until,
+                is_send
+            )
+            VALUES
+            (
+                @emp_id,
+                @device_name,
+                @device_id,
+                0,
+                NULL,
+                0
+            )
+        `);
+
+        console.log('Login device inserted successfully');
+
+        return true;
+
+    } catch (error) {
+        console.error(
+            'Insert login device error:',
+            error
+        );
+
+        throw error;
+    }
+};
 const refreshTokenApi = async (req, res) => {
     try {
 
-        const { refresh_token } = req.body;
+        const { refresh_token, deviceId } = req.body;
 
         if (!refresh_token) {
             return res.status(400).json({
@@ -187,7 +386,12 @@ const refreshTokenApi = async (req, res) => {
             });
         }
 
-
+        if (!deviceId) {
+            return res.status(400).json({
+                success: false,
+                message: 'device ID is required',
+            });
+        }
 
 
 
@@ -216,7 +420,48 @@ const refreshTokenApi = async (req, res) => {
         // GET USER FROM DATABASE
         // ==========================================
         const pool = await poolPromise;
+        const deviceResult = await pool
+            .request()
+            .input(
+                'emp_id',
+                sql.Int,
+                decoded.user_emp_key
+            )
+            .input(
+                'device_id',
+                sql.NVarChar,
+                String(deviceId).trim()
+            )
+            .query(`
+                SELECT TOP 1
+                    emp_id,
+                    device_id,
+                    device_name,
+                    login_accept,
+                    is_send
+                FROM expense_login_details
+                WHERE emp_id = @emp_id
+                  AND device_id = @device_id
+            `);
 
+        // ==========================================
+        // DEVICE REMOVED BY ADMIN
+        //
+        // No device row means admin logged
+        // this device out.
+        // ==========================================
+
+        if (deviceResult.recordset.length === 0) {
+
+            console.log(
+                'Device not found. Device logged out by admin.'
+            );
+
+            return res.status(401).json({
+                success: false,
+                message: 'Device logout from admin',
+            });
+        }
         const result = await pool.request()
             .input(
                 'id',
