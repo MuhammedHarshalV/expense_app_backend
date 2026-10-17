@@ -1,5 +1,5 @@
 const express = require('express');
-
+const authenticateToken = require('../middleware/auth');
 const {
     loginApi,
     refreshTokenApi,
@@ -16,7 +16,7 @@ router.post('/login', loginApi);
 // REFRESH TOKEN
 router.post('/refresh-token', refreshTokenApi);
 
-
+router.use(authenticateToken);
 // LOGOUT
 router.post('/logout', logoutApi);
 

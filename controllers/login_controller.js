@@ -184,6 +184,42 @@ where usr.Usr_EmpKey= @pin
             );
 
             if (acceptedLogin) {
+                // Check whether approval time is still valid
+                const timeCheckResult = await pool
+                    .request()
+                    .input('emp_id', sql.Int, empId)
+                    .query(`
+            SELECT TOP 1
+                login_accept,
+                login_accept_until
+            FROM expense_login_details
+            WHERE emp_id = @emp_id
+              AND login_accept = 1
+              AND login_accept_until IS NOT NULL
+              AND login_accept_until > GETDATE()
+        `);
+
+                // Approval time expired
+                if (timeCheckResult.recordset.length === 0) {
+
+                    // Clear expired approval
+                    await pool
+                        .request()
+                        .input('emp_id', sql.Int, empId)
+                        .query(`
+                UPDATE expense_login_details
+                SET
+                    login_accept = NULL,
+                    login_accept_until = NULL,
+                    is_send = NULL
+                WHERE emp_id = @emp_id
+            `);
+
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Allowed login time has expired. Please send a new login request.',
+                    });
+                }
 
                 await insertLoginDevice(
                     pool,
@@ -191,6 +227,19 @@ where usr.Usr_EmpKey= @pin
                     device_name,
                     device_id
                 );
+                // Reset login approval/request data for all devices
+                await pool
+                    .request()
+                    .input('emp_id', sql.Int, empId)
+                    .query(`
+            UPDATE expense_login_details
+            SET
+                login_accept = NULL,
+                login_accept_until = NULL,
+                is_send = NULL
+            WHERE emp_id = @emp_id
+        `);
+
             }
             else {
                 // ==========================================
@@ -541,21 +590,59 @@ const refreshTokenApi = async (req, res) => {
         });
     }
 };
-//logout api
+//logout api  
 const logoutApi = async (req, res) => {
     try {
+        const {
+            deviceId
+        } = req.body;
+        const empId = req.user?.user_emp_key;
 
-        const { refresh_token } = req.body;
+        if (!empId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid access token',
+            });
+        }
 
-        if (!refresh_token) {
+
+        if (!deviceId || !String(deviceId).trim()) {
             return res.status(400).json({
                 success: false,
-                message: 'refresh_token is required',
+                message: 'deviceId is required',
             });
         }
 
 
 
+
+        const pool = await poolPromise;
+
+        // Delete only this employee + this device
+        const deleteResult = await pool
+            .request()
+            .input(
+                'emp_id',
+                sql.Int,
+                empId
+            )
+            .input(
+                'device_id',
+                sql.NVarChar,
+                String(deviceId).trim()
+            )
+            .query(`
+                DELETE FROM expense_login_details
+                WHERE emp_id = @emp_id
+                  AND device_id = @device_id
+            `);
+
+        if (deleteResult.rowsAffected[0] === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Login device not found',
+            });
+        }
 
         return res.status(200).json({
             success: true,
@@ -563,8 +650,10 @@ const logoutApi = async (req, res) => {
         });
 
     } catch (err) {
-
-        console.error('❌ Logout error:', err);
+        console.error(
+            '❌ Logout error:',
+            err
+        );
 
         return res.status(500).json({
             success: false,

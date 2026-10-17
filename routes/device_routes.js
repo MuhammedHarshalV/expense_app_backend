@@ -6,7 +6,9 @@ const router = express.Router();
 
 const {
     acceptRequest,
-    sendRequest
+    sendRequest,
+    rejectRequest,
+    getLoggedDevices
 
 } = require('../controllers/device_controller');
 
@@ -19,6 +21,16 @@ router.post(
 router.get(
     '/device-get',
     sendRequest
+);
+//reject send
+router.post(
+    '/device-reject',
+    rejectRequest
+);
+//device details get
+router.get(
+    '/device-logedDetails',
+    getLoggedDevices
 );
 
 
