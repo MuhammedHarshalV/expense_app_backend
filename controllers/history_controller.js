@@ -253,6 +253,15 @@ const getExpenseHistory = async (req, res) => {
                 0
             ) AS approved_amount,
 
+              SUM(
+                CASE
+                    WHEN e.approved_amount IS NOT NULL
+                         AND e.approved_amount <> 0
+                    THEN 1
+                    ELSE 0
+                END
+            ) AS approved_entries_count,
+
             MAX(e.expense_date)
                 AS last_transaction_date
 
@@ -306,6 +315,9 @@ const getExpenseHistory = async (req, res) => {
                         Number(
                             item.approved_amount
                         ) || 0,
+                    approved_count: Number(
+                        item.approved_entries_count
+                    ) || 0,
 
                     last_transaction_date:
                         item.last_transaction_date,
