@@ -10,10 +10,13 @@ const deviceRoutes = require('./routes/device_routes');
 
 
 const { BASE_URL, PORT } = require('./config/config');
+const cors = require("cors");
 const app = express();
+app.use(cors());
 
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/users', userRoutes);
 app.use('/api/auth', authRoutes);

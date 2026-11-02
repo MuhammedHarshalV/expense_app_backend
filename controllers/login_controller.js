@@ -5,7 +5,133 @@ const {
     JWT_REFRESH_SECRET
 } = require('../config/config');
 const jwt = require('jsonwebtoken');
+//admin login
+const adminLogin = async (req, res) => {
+    try {
+        const { name, password } = req.query;
 
+        // 1. Validate query params
+        if (!name || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Name and password are required",
+            });
+        }
+
+        const pool = await poolPromise;
+
+        // 2. Find user using name + password
+        const result = await pool
+            .request()
+            .input("name", sql.VarChar, name)
+            .input("password", sql.VarChar, password)
+            .query(`
+        SELECT
+          usr.Usr_EmpId,
+          usr.Usr_Name,
+          usr.Usr_grp,
+
+          acc.AhMst_pName,
+          acc.AhMst_Phno,
+          acc.AhMst_mobile,
+          acc.AhMst_Email,
+          acc.AhMst_Note,
+          acc.AhMst_Image,
+          acc.AhMst_Ismale,
+          acc.AhMst_Address,
+          acc.AhMst_Dob
+
+        FROM Users usr
+
+        LEFT JOIN AccountHeads_Mst acc
+          ON usr.Usr_EmpId = acc.AhMst_Key
+
+        WHERE usr.Usr_Name = @name
+          AND usr.Usr_pwd = @password
+      `);
+
+        // 3. Name/password incorrect
+        if (result.recordset.length === 0) {
+            return res.status(402).json({
+                success: false,
+                message: "Invalid name or password",
+            });
+        }
+
+        const user = result.recordset[0];
+
+        // 4. Check admin permission
+        const allowedGroups = ["Administrator", "Accounts"];
+
+        if (!allowedGroups.includes(user.Usr_grp)) {
+            return res.status(403).json({
+                success: false,
+                message: "You are not an admin. Access denied.",
+            });
+        }
+
+        // Both Administrator and Accounts are allowed
+        const isAdmin = true;
+
+        // 5. Generate access token
+        const accessToken = jwt.sign(
+            {
+                user_emp_key: user.Usr_EmpId,
+                is_admin: isAdmin,
+            },
+            JWT_ACCESS_SECRET,
+            {
+                expiresIn: "15m",
+            }
+        );
+
+        // 6. Generate refresh token
+        const refreshToken = jwt.sign(
+            {
+                user_emp_key: user.Usr_EmpId,
+                is_admin: isAdmin,
+            },
+            JWT_REFRESH_SECRET,
+            {
+                expiresIn: "30d",
+            }
+        );
+
+        // 7. Response
+        return res.status(200).json({
+            success: true,
+            message: "Login successful",
+            access_token: accessToken,
+            refresh_token: refreshToken,
+
+            data: {
+                user_emp_key: user.Usr_EmpId,
+                user_name: user.AhMst_pName ?? user.Usr_Name,
+                user_phone_number:
+                    user.AhMst_mobile ?? user.AhMst_Phno ?? null,
+                user_email: user.AhMst_Email ?? null,
+                date_of_birth: user.AhMst_Dob ?? null,
+                user_location: user.AhMst_Address ?? null,
+                user_about: user.AhMst_Note ?? null,
+                user_gender:
+                    user.AhMst_Ismale,
+
+                is_admin: isAdmin,
+
+                profile_photo_url: user.AhMst_Image
+                    ? `${BASE_URL}/api/users/${user.Usr_EmpId}/photo`
+                    : null,
+            },
+        });
+    } catch (error) {
+        console.error("Admin login error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+        });
+    }
+};
 
 // ==========================================
 // LOGIN
@@ -590,6 +716,145 @@ const refreshTokenApi = async (req, res) => {
         });
     }
 };
+
+//admin refresh token 
+const refreshAdminTokenApi = async (req, res) => {
+    try {
+
+        const { refresh_token } = req.body;
+
+        // ==========================================
+        // VALIDATION
+        // ==========================================
+
+        if (!refresh_token) {
+            return res.status(400).json({
+                success: false,
+                message: "refresh_token is required",
+            });
+        }
+
+        // ==========================================
+        // VERIFY REFRESH TOKEN
+        // ==========================================
+
+        let decoded;
+
+        try {
+            decoded = jwt.verify(
+                refresh_token,
+                JWT_REFRESH_SECRET
+            );
+        } catch (error) {
+            return res.status(401).json({
+                success: false,
+                message: "Refresh token expired or invalid",
+            });
+        }
+
+        // ==========================================
+        // GET USER
+        // ==========================================
+
+        const pool = await poolPromise;
+
+        const result = await pool
+            .request()
+            .input(
+                "id",
+                sql.Int,
+                decoded.user_emp_key
+            )
+            .query(`
+                SELECT
+                    Usr_EmpId,
+                    Usr_grp
+                FROM Users
+                WHERE Usr_EmpId = @id
+            `);
+
+        if (result.recordset.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const user = result.recordset[0];
+
+        // ==========================================
+        // ADMIN / ACCOUNTS CHECK
+        // ==========================================
+
+        const allowedGroups = [
+            "Administrator",
+            "Accounts",
+        ];
+
+        if (!allowedGroups.includes(user.Usr_grp)) {
+            return res.status(403).json({
+                success: false,
+                message: "You are not authorized to access admin panel",
+            });
+        }
+
+        // ==========================================
+        // GENERATE NEW ACCESS TOKEN
+        // ==========================================
+
+        const newAccessToken = jwt.sign(
+            {
+                user_emp_key: user.Usr_EmpId,
+                is_admin:
+                    user.Usr_grp === "Administrator",
+            },
+            JWT_ACCESS_SECRET,
+            {
+                expiresIn: "15m",
+            }
+        );
+
+        // ==========================================
+        // GENERATE NEW REFRESH TOKEN
+        // ==========================================
+
+        const newRefreshToken = jwt.sign(
+            {
+                user_emp_key: user.Usr_EmpId,
+            },
+            JWT_REFRESH_SECRET,
+            {
+                expiresIn: "30d",
+            }
+        );
+
+        // ==========================================
+        // RESPONSE
+        // ==========================================
+
+        return res.status(200).json({
+            success: true,
+            message: "Token refreshed successfully",
+
+            data: {
+                access_token: newAccessToken,
+                refresh_token: newRefreshToken,
+            },
+        });
+
+    } catch (err) {
+
+        console.error(
+            "❌ Admin refresh token error:",
+            err
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: err.message,
+        });
+    }
+};
 //logout api  
 const logoutApi = async (req, res) => {
     try {
@@ -664,5 +929,5 @@ const logoutApi = async (req, res) => {
 module.exports = {
     loginApi,
     refreshTokenApi,
-    logoutApi
+    logoutApi, adminLogin, refreshAdminTokenApi
 };
