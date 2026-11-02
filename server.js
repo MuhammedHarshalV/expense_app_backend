@@ -7,6 +7,8 @@ const clinicRoutes = require('./routes/clinic_routes');
 const expenseRoutes = require('./routes/expense_routes');
 const historyRoutes = require('./routes/history_routes');
 const deviceRoutes = require('./routes/device_routes');
+const menuRoutes = require('./routes/menu_routes');
+
 
 
 const { BASE_URL, PORT } = require('./config/config');
@@ -24,6 +26,7 @@ app.use('/api/clinic', clinicRoutes);
 app.use('/api/expense', expenseRoutes);
 app.use('/api/expense', historyRoutes);
 app.use('/api', deviceRoutes);
+app.use('/api/menu', menuRoutes);
 
 app.get('/', (req, res) => {
     res.json({
