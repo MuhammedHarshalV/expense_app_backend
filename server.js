@@ -8,6 +8,8 @@ const expenseRoutes = require('./routes/expense_routes');
 const historyRoutes = require('./routes/history_routes');
 const deviceRoutes = require('./routes/device_routes');
 const menuRoutes = require('./routes/menu_routes');
+const dashboardRoutes = require('./routes/dashboard_routes');
+
 
 
 
@@ -27,6 +29,8 @@ app.use('/api/expense', expenseRoutes);
 app.use('/api/expense', historyRoutes);
 app.use('/api', deviceRoutes);
 app.use('/api/menu', menuRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+
 
 app.get('/', (req, res) => {
     res.json({

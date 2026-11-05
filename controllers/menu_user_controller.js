@@ -53,68 +53,86 @@ const getAllEmployees = async (req, res) => {
 
         const offset = (page - 1) * limit;
 
-        // 4. Get total employee count
+        const search = (req.query.search || "").trim();
+
+        // 5. Get total employee count
         const countResult = await pool.request()
+            .input("search", sql.NVarChar(200), `%${search}%`)
             .query(`
-        SELECT COUNT(*) AS total
-        FROM Users usr
-        WHERE EXISTS (
-            SELECT 1
-            FROM all_expense_details exp
-            WHERE exp.user_id = usr.Usr_EmpId
-        )
-    `);
+                SELECT COUNT(*) AS total
+                FROM Users usr
+                LEFT JOIN AccountHeads_Mst acc
+                    ON usr.Usr_EmpId = acc.AhMst_Key
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM all_expense_details exp
+                    WHERE exp.user_id = usr.Usr_EmpId
+                )
+                AND (
+                    @search = '%%'
+                    OR acc.AhMst_pName LIKE @search
+                )
+            `);
+
 
         const totalEmployees = countResult.recordset[0].total;
 
-        // 5. Get paginated employees
+
+
+        // 6. Get paginated employees
         const result = await pool.request()
+            .input("search", sql.NVarChar(200), `%${search}%`)
             .input("offset", sql.Int, offset)
             .input("limit", sql.Int, limit)
             .query(`
-        SELECT
-            usr.Usr_EmpId,
-            usr.Usr_EmpKey,
-            usr.Usr_grp,
-            acc.AhMst_pName,
-            acc.AhMst_mobile,
-            acc.AhMst_Email,
-            acc.AhMst_Note,
-            acc.AhMst_Image,
-            acc.AhMst_Ismale,
-            acc.AhMst_Address,
-            acc.AhMst_Dob,
+                SELECT
+                    usr.Usr_EmpId,
+                    usr.Usr_EmpKey,
+                    usr.Usr_grp,
+                    acc.AhMst_pName,
+                    acc.AhMst_mobile,
+                    acc.AhMst_Email,
+                    acc.AhMst_Note,
+                    acc.AhMst_Image,
+                    acc.AhMst_Ismale,
+                    acc.AhMst_Address,
+                    acc.AhMst_Dob,
 
-            ISNULL(login.device_count, 0) AS device_count,
+                    ISNULL(login.device_count, 0) AS device_count,
 
-            CASE
-                WHEN ISNULL(login.device_count, 0) >= 2
-                THEN CAST(1 AS BIT)
-                ELSE CAST(0 AS BIT)
-            END AS is_multiple_device
+                    CASE
+                        WHEN ISNULL(login.device_count, 0) >= 2
+                        THEN CAST(1 AS BIT)
+                        ELSE CAST(0 AS BIT)
+                    END AS is_multiple_device
 
-        FROM Users usr
+                FROM Users usr
 
-        LEFT JOIN AccountHeads_Mst acc
-            ON usr.Usr_EmpId = acc.AhMst_Key
+                LEFT JOIN AccountHeads_Mst acc
+                    ON usr.Usr_EmpId = acc.AhMst_Key
 
-        OUTER APPLY (
-            SELECT COUNT(*) AS device_count
-            FROM expense_login_details eld
-            WHERE eld.emp_id = usr.Usr_EmpId
-        ) login
+                OUTER APPLY (
+                    SELECT COUNT(*) AS device_count
+                    FROM expense_login_details eld
+                    WHERE eld.emp_id = usr.Usr_EmpId
+                ) login
 
-        WHERE EXISTS (
-            SELECT 1
-            FROM all_expense_details exp
-            WHERE exp.user_id = usr.Usr_EmpId
-        )
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM all_expense_details exp
+                    WHERE exp.user_id = usr.Usr_EmpId
+                )
+                AND (
+                    @search = '%%'
+                    OR acc.AhMst_pName LIKE @search
+                )
 
-        ORDER BY usr.Usr_EmpId DESC
+                ORDER BY usr.Usr_EmpId DESC
 
-        OFFSET @offset ROWS
-        FETCH NEXT @limit ROWS ONLY
-    `);
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY
+            `);
+
         // 6. Format employee data
         const employees = result.recordset.map((user) => ({
             user_emp_key: user.Usr_EmpId,
@@ -206,44 +224,55 @@ const getLogedDevices = async (req, res) => {
         );
 
         const offset = (page - 1) * limit;
+        const search = (req.query.search || "").trim();
+        const searchValue = `%${search}%`;
 
+        // 4. Count filtered devices
         const countResult = await pool.request()
+            .input("search", sql.NVarChar(200), searchValue)
             .query(`
                 SELECT COUNT(*) AS total
-                FROM expense_login_details
+                FROM expense_login_details eld
+                LEFT JOIN AccountHeads_Mst acc
+                    ON eld.emp_id = acc.AhMst_Key
+                WHERE acc.AhMst_pName LIKE @search
             `);
 
         const totalDevices = countResult.recordset[0].total;
 
         // 5. Get paginated device details
         const result = await pool.request()
+            .input("search", sql.NVarChar(200), searchValue)
             .input("offset", sql.Int, offset)
             .input("limit", sql.Int, limit)
             .query(`
-        SELECT
-            eld.emp_id,
-            acc.AhMst_pName,
-            acc.AhMst_Image,
-            acc.AhMst_drEdDet,
-            acc.AhMst_DeptId,
-            m.Mstr_Desc,
-            eld.device_name,
-            eld.device_id
+                SELECT
+                    eld.emp_id,
+                    acc.AhMst_pName,
+                    acc.AhMst_Image,
+                    acc.AhMst_drEdDet,
+                    acc.AhMst_DeptId,
+                    m.Mstr_Desc,
+                    eld.device_name,
+                    eld.device_id
 
-        FROM expense_login_details eld
+                FROM expense_login_details eld
 
-        LEFT JOIN AccountHeads_Mst acc
-            ON eld.emp_id = acc.AhMst_Key
+                LEFT JOIN AccountHeads_Mst acc
+                    ON eld.emp_id = acc.AhMst_Key
 
-        LEFT JOIN Masters m
-            ON acc.AhMst_DeptId = m.Mstr_Key
-            AND m.Mstr_Type = 'Dept'
+                LEFT JOIN Masters m
+                    ON acc.AhMst_DeptId = m.Mstr_Key
+                    AND m.Mstr_Type = 'Dept'
 
-        ORDER BY eld.emp_id DESC
+                WHERE acc.AhMst_pName LIKE @search
 
-        OFFSET @offset ROWS
-        FETCH NEXT @limit ROWS ONLY
-    `);
+                ORDER BY eld.emp_id DESC
+
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY
+            `);
+
 
         // 6. Format response
         const devices = result.recordset.map((item) => ({
@@ -282,6 +311,7 @@ const getLogedDevices = async (req, res) => {
     }
 };
 // device remove
+
 const removeLoggedDevice = async (req, res) => {
     try {
         // 1. Get device ID from query params
@@ -294,25 +324,7 @@ const removeLoggedDevice = async (req, res) => {
             });
         }
 
-        const pool = await poolPromise;
-
-        // 2. Check whether device exists
-        const deviceResult = await pool.request()
-            .input("device_id", sql.VarChar, device_id)
-            .query(`
-                SELECT device_id, emp_id
-                FROM expense_login_details
-                WHERE device_id = @device_id
-            `);
-
-        if (deviceResult.recordset.length === 0) {
-            return res.status(404).json({
-                success: false,
-                message: "Device not found",
-            });
-        }
-
-        // 3. Validate logged-in user
+        // 2. Get employee ID from access token
         const userId = req.user?.user_emp_key;
 
         if (!userId) {
@@ -322,7 +334,9 @@ const removeLoggedDevice = async (req, res) => {
             });
         }
 
-        // 4. Check admin permission
+        const pool = await poolPromise;
+
+        // 3. Check admin permission
         const adminResult = await pool.request()
             .input("id", sql.Int, userId)
             .query(`
@@ -331,10 +345,29 @@ const removeLoggedDevice = async (req, res) => {
                 WHERE Usr_EmpId = @id
             `);
 
-        if (userGroup !== "Administrator") {
+        if (
+            adminResult.recordset.length === 0 ||
+            adminResult.recordset[0].Usr_grp !== "Administrator"
+        ) {
             return res.status(403).json({
                 success: false,
                 message: "Access denied. Admin permission required",
+            });
+        }
+
+        // 4. Check whether device exists
+        const deviceResult = await pool.request()
+            .input("device_id", sql.VarChar, device_id)
+            .query(`
+                SELECT device_id
+                FROM expense_login_details
+                WHERE device_id = @device_id
+            `);
+
+        if (deviceResult.recordset.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "Device not found",
             });
         }
 
@@ -358,10 +391,11 @@ const removeLoggedDevice = async (req, res) => {
 
         return res.status(500).json({
             success: false,
-            message: err.message,
+            message: "Internal server error",
         });
     }
 };
+
 
 module.exports = {
     getAllEmployees,
