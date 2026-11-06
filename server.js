@@ -9,7 +9,7 @@ const historyRoutes = require('./routes/history_routes');
 const deviceRoutes = require('./routes/device_routes');
 const menuRoutes = require('./routes/menu_routes');
 const dashboardRoutes = require('./routes/dashboard_routes');
-
+const clinicSearchRoutes = require('./routes/clinic_search_routes');
 
 
 
@@ -30,6 +30,7 @@ app.use('/api/expense', historyRoutes);
 app.use('/api', deviceRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api', clinicSearchRoutes);
 
 
 app.get('/', (req, res) => {
