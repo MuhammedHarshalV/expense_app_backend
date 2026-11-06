@@ -1,6 +1,7 @@
 
 const { sql, poolPromise } = require('../db');
 
+const { BASE_URL } = require('../config/config');
 
 const getClinicDetails = async (req, res) => {
     try {
@@ -96,6 +97,7 @@ const getClinicDetails = async (req, res) => {
                     c.clinic_total_exp,
                     c.approved_amount,
                     c.user_id,
+                    c.clinic_photo,
                     c.date_time,
                     a.AhMst_pName AS employeeName
                 FROM AllClinicDetails c
@@ -128,6 +130,7 @@ const getClinicDetails = async (req, res) => {
                 SELECT
                     fc.clinic_id AS clinicId,
                     fc.clinic_name AS clinicName,
+                    fc.clinic_photo AS clinicPhoto,
                     fc.clinic_place AS location,
                     fc.clinic_total_exp AS totalExpense,
                     fc.approved_amount AS approvedAmount,
@@ -212,8 +215,11 @@ const getClinicDetails = async (req, res) => {
                 return countResult.recordset[0].totalRecords;
             })();
 
-        const data = records.map(({ totalRecords, ...clinic }) => ({
+        const data = records.map(({ totalRecords, clinicPhoto, ...clinic }) => ({
             ...clinic,
+            clinicImage: clinicPhoto
+                ? `${BASE_URL}/api/clinic/${clinic.clinicId}/photo`
+                : null,
             isApproved: Boolean(clinic.isApproved),
         }));
 
