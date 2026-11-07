@@ -6,7 +6,7 @@ const router = express.Router();
 
 const {
     // createUser,
-    // getUser,
+    getExpenseUsers,
     getSingleUser,
     updateUser,
     getUserPhoto,
@@ -18,13 +18,13 @@ router.get(
 );
 
 router.use(authenticateToken);
-// CREATE
-// router.post(
-//     '/create-user',
-//     requireAdmin,
-//     upload.single('user_profile_photo'),
-//     createUser
-// );
+
+router.get(
+    '/list',
+    requireAdmin,
+
+    getExpenseUsers
+);
 
 
 // GET ALL

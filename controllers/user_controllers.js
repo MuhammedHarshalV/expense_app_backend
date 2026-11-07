@@ -159,105 +159,103 @@ const createUser = async (req, res) => {
 
 
 //get all users
-// const getUser = async (req, res) => {
-//     try {
-//         const page = parseInt(req.query.page) || 1;
-//         const limit = parseInt(req.query.limit) || 10;
+const getExpenseUsers = async (req, res) => {
+    try {
 
-//         if (page < 1) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Page must be greater than 0',
-//             });
-//         }
+        const userId = req.user?.user_emp_key;
 
-//         if (limit < 1) {
-//             return res.status(400).json({
-//                 success: false,
-//                 message: 'Limit must be greater than 0',
-//             });
-//         }
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid access token",
+            });
+        }
 
-//         const offset = (page - 1) * limit;
+        const pool = await poolPromise;
 
-//         const pool = await poolPromise;
+        // 2. Check whether logged-in user is Admin
+        const adminResult = await pool.request()
+            .input("id", sql.Int, userId)
+            .query(`
+                SELECT Usr_grp
+                FROM Users
+                WHERE Usr_EmpId = @id
+            `);
 
-//         // ==========================================
-//         // TOTAL USER COUNT
-//         // ==========================================
+        if (adminResult.recordset.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: "User not found",
+            });
+        }
 
-//         const countResult = await pool.request()
-//             .query(`
-//                 SELECT COUNT(*) AS total
-//                 FROM user_details
-//             `);
+        const userGroup = adminResult.recordset[0].Usr_grp;
 
-//         const totalCount = countResult.recordset[0].total;
+        if (userGroup !== "Administrator") {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Admin permission required",
+            });
+        }
 
-//         if (totalCount === 0) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: 'User not found',
-//             });
-//         }
 
-//         // ==========================================
-//         // PAGINATED USERS
-//         // ==========================================
+        const page = Math.max(parseInt(req.query.page) || 1, 1);
+        const limit = Math.max(parseInt(req.query.limit) || 10, 1);
+        const offset = (page - 1) * limit;
 
-//         const result = await pool.request()
-//             .input('offset', sql.Int, offset)
-//             .input('limit', sql.Int, limit)
-//             .query(`
-//                 SELECT *
-//                 FROM user_details
-//                 ORDER BY user_emp_key ASC
-//                 OFFSET @offset ROWS
-//                 FETCH NEXT @limit ROWS ONLY
-//             `);
 
-//         // ==========================================
-//         // PROFILE PHOTO URL
-//         // ==========================================
 
-//         const users = result.recordset.map(user => ({
-//             ...user,
-//             date_of_birth: user.date_of_birth
-//                 ? user.date_of_birth.toISOString().split('T')[0]
-//                 : null,
-//             user_profile_photo: user.user_profile_photo
-//                 ? `${BASE_URL}/api/users/${user.user_emp_key}/photo`
-//                 : null,
-//         }));
+        const result = await pool.request()
+            .input("offset", sql.Int, offset)
+            .input("limit", sql.Int, limit)
+            .query(`
+                WITH UniqueUsers AS (
+                    SELECT DISTINCT emp_id
+                    FROM expense_login_details
+                    WHERE emp_id IS NOT NULL
+                ),
+                UserList AS (
+                    SELECT
+                        a.AhMst_pName AS name
+                    FROM UniqueUsers u
+                    INNER JOIN AccountHeads_Mst a
+                        ON a.AhMst_Key = u.emp_id
+                )
+                SELECT
+                    (SELECT COUNT(*) FROM UserList) AS totalRecords,
+                    name
+                FROM UserList
+                ORDER BY name
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY;
+            `);
 
-//         // ==========================================
-//         // PAGINATION
-//         // ==========================================
+        const totalRecords = result.recordset[0]?.totalRecords ?? 0;
 
-//         const totalPages = Math.ceil(totalCount / limit);
+        const users = result.recordset.map(user => ({
+            name: user.name
+        }));
 
-//         return res.status(200).json({
-//             success: true,
+        res.status(200).json({
+            success: true,
+            data: users,
+            pagination: {
+                currentPage: page,
+                limit,
+                totalRecords,
+                totalPages: Math.ceil(totalRecords / limit)
+            }
+        });
 
-//             pagination: {
-//                 total_count: totalCount,
-//                 current_page: page,
-//                 total_pages: totalPages,
-//                 limit: limit,
-//             },
+    } catch (error) {
+        console.error("Get Expense Users Error:", error);
 
-//             data: users,
-//         });
-
-//     } catch (err) {
-//         console.error('Get users error:', err);
-
-//         return res.status(500).json({
-//             success: false,
-//             message: err.message,
-//         });
-//     }
-// };
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch users"
+        });
+    }
+};
 
 //get single users
 
@@ -1040,7 +1038,7 @@ const getUserPhoto = async (req, res) => {
 
 module.exports = {
     // createUser,
-    // getUser,
+    getExpenseUsers,
     getSingleUser,
     updateUser,
     //  deleteUser,
