@@ -3,161 +3,6 @@ const { sql, poolPromise } = require('../db');
 const { BASE_URL } = require('../config/config');
 
 
-
-//create users
-const createUser = async (req, res) => {
-    try {
-        //  match Postman text keys
-        const name = req.body.user_name;
-        const phone = req.body.user_phone_number;
-        const pin = req.body.user_pin;
-        const email = req.body.user_email || null;
-        const date_of_birth = req.body.date_of_birth || null;
-        const location = req.body.user_location || null;
-        const about = req.body.user_about || null;
-        const gender = req.body.user_gender || null;
-
-        let isAdmin;
-
-        if (req.body.is_admin === 'true' || req.body.is_admin === true) {
-            isAdmin = true;
-        } else if (
-            req.body.is_admin === 'false' ||
-            req.body.is_admin === false
-        ) {
-            isAdmin = false;
-        } else {
-            return res.status(400).json({
-                success: false,
-                message: 'is_admin must be true or false',
-            });
-        }
-
-        console.log('BODY:', req.body);
-        console.log('FILE:', req.file);
-
-        if (!name) {
-            return res.status(400).json({
-                success: false,
-                message: 'user_name is required',
-            });
-        }
-        if (!phone) {
-            return res.status(400).json({
-                success: false,
-                message: 'user_phone_number is required',
-            });
-        }
-        if (!pin || isNaN(parseInt(pin))) {
-            return res.status(400).json({
-                success: false,
-                message: 'user_pin must be a number',
-            });
-        }
-        // =====================================
-        // OPTIONAL DATE VALIDATION
-        // =====================================
-
-        let parsedDateOfBirth = null;
-
-        if (date_of_birth) {
-            parsedDateOfBirth = new Date(date_of_birth);
-
-            if (isNaN(parsedDateOfBirth.getTime())) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Invalid date_of_birth format. Use YYYY-MM-DD',
-                });
-            }
-        }
-
-        const pool = await poolPromise;
-        const existing = await pool.request()
-            .input('name', sql.NVarChar, name)
-            .input('phone', sql.NVarChar, phone)
-            .query(`
-          SELECT user_emp_key
-          FROM   user_details
-          WHERE  user_name         = @name
-          AND    user_phone_number = @phone
-        `);
-
-        if (existing.recordset.length > 0) {
-            return res.status(409).json({
-                success: false,
-                message: 'User already exists',
-            });
-        }
-
-        const photoBuffer = req.file ? req.file.buffer : null;
-
-        const result = await pool.request()
-            .input('name', sql.NVarChar, name)
-            .input('phone', sql.NVarChar, phone)
-            .input('profilePhoto', sql.VarBinary, photoBuffer)
-            .input('pin', sql.Int, parseInt(pin))
-            .input('isAdmin', sql.Bit, isAdmin)
-            .input('email', sql.NVarChar, email)
-            .input('date_of_birth', sql.Date, date_of_birth)
-            .input('location', sql.NVarChar, location)
-            .input('about', sql.NVarChar, about)
-            .input('gender', sql.NVarChar, gender)
-
-            .query(`
-          INSERT INTO user_details (
-            user_name,
-            user_phone_number,
-            user_profile_photo,
-            user_pin,
-            is_admin,
-            user_email,
-            date_of_birth,
-            user_location,
-            user_about,
-            user_gender
-          )
-          OUTPUT
-            INSERTED.user_emp_key,
-            INSERTED.user_name,
-            INSERTED.user_phone_number,
-            INSERTED.user_pin,
-            INSERTED.is_admin,
-            INSERTED.user_email,
-            INSERTED.date_of_birth,
-            INSERTED.user_location,
-            INSERTED.user_about,
-            INSERTED.user_gender
-          VALUES (
-            @name,
-            @phone,
-            @profilePhoto,
-            @pin,
-            @isAdmin,
-            @email,
-            @date_of_birth,
-            @location,
-            @about,
-            @gender
-          )
-        `);
-
-        return res.status(201).json({
-            success: true,
-            message: 'User created successfully',
-            data: result.recordset[0],
-        });
-
-    } catch (err) {
-        console.error('❌ Create user error:', err);
-        return res.status(500).json({
-            success: false,
-            message: err.message,
-        });
-    }
-};
-
-
-
 //get all users
 const getExpenseUsers = async (req, res) => {
     try {
@@ -1007,40 +852,246 @@ const getUserPhoto = async (req, res) => {
     }
 };
 
-//delete user
-// const deleteUser = async (req, res) => {
-//     try {
-//         const pool = await poolPromise;
-//         const existing = await pool.request()
-//             .input('id', sql.Int, req.params.id)
-//             .query('SELECT user_emp_key, user_name FROM user_details WHERE user_emp_key = @id');
+//user details with user section details
+const getUserDetails = async (req, res) => {
+    try {
+        const {
+            search = "",
+            startDate,
+            endDate,
+            page = 1,
+            limit = 10,
+        } = req.query;
+        const userId = req.user?.user_emp_key;
 
-//         if (existing.recordset.length === 0) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: 'User not found',
-//             });
-//         }
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid access token",
+            });
+        }
 
-//         await pool.request()
-//             .input('id', sql.Int, req.params.id)
-//             .query('DELETE FROM user_details WHERE user_emp_key = @id');
+        const pool = await poolPromise;
 
-//         res.json({
-//             success: true,
-//             message: 'User deleted',
-//             data: existing.recordset[0],
-//         });
-//     } catch (err) {
-//         res.status(500).json({ success: false, message: err.message });
-//     }
-// };
+        // 2. Check whether logged-in user is Admin
+        const adminResult = await pool.request()
+            .input("id", sql.Int, userId)
+            .query(`
+                SELECT Usr_grp
+                FROM Users
+                WHERE Usr_EmpId = @id
+            `);
+
+        if (adminResult.recordset.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const userGroup = adminResult.recordset[0].Usr_grp;
+
+        if (userGroup !== "Administrator") {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Admin permission required",
+            });
+        }
+
+        // Date defaults
+        const today = new Date();
+
+        const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+
+            return `${year}-${month}-${day}`;
+        };
+
+        const currentMonthStart = new Date(
+            today.getFullYear(),
+            today.getMonth(),
+            1
+        );
+
+        const fromDate = startDate || formatDate(currentMonthStart);
+        const toDate = endDate || formatDate(today);
+
+        // Pagination
+        const currentPage = Math.max(parseInt(page) || 1, 1);
+        const pageLimit = Math.max(parseInt(limit) || 10, 1);
+        const offset = (currentPage - 1) * pageLimit;
+
+
+
+        const result = await pool.request()
+            .input("search", sql.NVarChar, `%${search.trim()}%`)
+            .input("startDate", sql.Date, fromDate)
+            .input("endDate", sql.Date, toDate)
+            .input("offset", sql.Int, offset)
+            .input("limit", sql.Int, pageLimit)
+            .query(`
+                ;WITH UniqueUsers AS (
+                    SELECT DISTINCT emp_id
+                    FROM expense_login_details
+                    WHERE emp_id IS NOT NULL
+                ),
+
+                UserDetails AS (
+                    SELECT
+                        acc.AhMst_Key AS proId,
+                        acc.AhMst_pName AS name,
+                        acc.AhMst_Image AS profileImageUrl,
+                        acc.AhMst_drEdDet AS designation,
+                        acc.AhMst_DeptId AS departmentId,
+                        acc.AhMst_mobile AS phoneNumber,
+                        acc.AhMst_Address AS location,
+                        m.Mstr_Desc AS department
+
+                    FROM UniqueUsers u
+
+                    INNER JOIN AccountHeads_Mst acc
+                        ON u.emp_id = acc.AhMst_Key
+
+                    LEFT JOIN Masters m
+                        ON acc.AhMst_DeptId = m.Mstr_Key
+                        AND m.Mstr_Type = 'Dept'
+
+                    WHERE
+                        acc.AhMst_pName LIKE @search
+                        OR CAST(acc.AhMst_Key AS NVARCHAR(50)) LIKE @search
+                ),
+
+                ClinicSummary AS (
+                    SELECT
+                        c.user_id,
+
+                        COUNT(DISTINCT c.clinic_id) AS totalClinicVisited,
+
+                        COUNT(*) AS totalClinicEntries,
+
+                        SUM(ISNULL(c.clinic_total_exp, 0))
+                            AS totalClaimedExpense,
+
+                        SUM(ISNULL(c.approved_amount, 0))
+                            AS totalApprovedAmount
+
+                    FROM AllClinicDetails c
+
+                    WHERE
+                        c.date_time >= @startDate
+                        AND c.date_time < DATEADD(DAY, 1, @endDate)
+
+                    GROUP BY c.user_id
+                ),
+
+                ExpenseSummary AS (
+                    SELECT
+                        e.user_id,
+                        COUNT(*) AS totalClaimedCount
+
+                    FROM all_expense_details e
+
+                    WHERE
+                        e.expense_date >= @startDate
+                        AND e.expense_date < DATEADD(DAY, 1, @endDate)
+
+                    GROUP BY e.user_id
+                ),
+
+                FinalUsers AS (
+                    SELECT
+                        u.proId,
+                        u.name,
+                        u.profileImageUrl,
+                        u.designation,
+                        u.departmentId,
+                        u.department,
+
+                        u.phoneNumber,
+                        u.location,   
+
+                        ISNULL(c.totalClinicVisited, 0)
+                            AS totalClinicVisited,
+
+                        ISNULL(e.totalClaimedCount, 0)
+                            AS totalClaimedCount,
+
+                        ISNULL(c.totalClaimedExpense, 0)
+                            AS totalClaimedExpense,
+
+                        ISNULL(c.totalApprovedAmount, 0)
+                            AS totalApprovedAmount
+
+                    FROM UserDetails u
+
+                    LEFT JOIN ClinicSummary c
+                        ON c.user_id = u.proId
+
+                    LEFT JOIN ExpenseSummary e
+                        ON e.user_id = u.proId
+                )
+
+                SELECT
+                    (SELECT COUNT(*) FROM FinalUsers) AS totalRecords,
+                    *
+                FROM FinalUsers
+
+                ORDER BY proId DESC
+
+                OFFSET @offset ROWS
+                FETCH NEXT @limit ROWS ONLY;
+            `);
+
+        const totalRecords =
+            result.recordset[0]?.totalRecords ?? 0;
+
+        const users = result.recordset.map((user) => ({
+            name: user.name,
+            proId: user.proId,
+            profileImageUrl: user.profileImageUrl
+                ? `${BASE_URL}/api/users/${user.proId}/photo`
+                : null,
+            designation: user.designation,
+            department: user.department,
+            phoneNumber: user.phoneNumber,
+            location: user.location,
+
+            totalClinicVisited: user.totalClinicVisited,
+            totalClaimedCount: user.totalClaimedCount,
+            totalClaimedExpense: user.totalClaimedExpense,
+            totalApprovedAmount: user.totalApprovedAmount,
+        }));
+
+        return res.status(200).json({
+            success: true,
+            message: "User details fetched successfully",
+            data: users,
+            pagination: {
+                currentPage,
+                limit: pageLimit,
+                totalRecords,
+                totalPages: Math.ceil(totalRecords / pageLimit),
+            },
+        });
+
+    } catch (error) {
+        console.error("Get User Details Error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "Failed to fetch user details",
+        });
+    }
+};
+
 
 module.exports = {
     // createUser,
     getExpenseUsers,
     getSingleUser,
     updateUser,
-    //  deleteUser,
+    getUserDetails,
     getUserPhoto
 };

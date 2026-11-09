@@ -10,7 +10,7 @@ const {
     getSingleUser,
     updateUser,
     getUserPhoto,
-    // deleteUser,
+    getUserDetails,
 } = require('../controllers/user_controllers');
 router.get(
     '/:id/photo',
@@ -28,11 +28,11 @@ router.get(
 
 
 // GET ALL
-// router.get(
-//     '/all_users',
-//     requireAdmin,
-//     getUser
-// );
+router.get(
+    '/user-details',
+    requireAdmin,
+    getUserDetails
+);
 
 // // GET PHOTO
 // router.get(
