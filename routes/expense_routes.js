@@ -1,7 +1,7 @@
 const express = require('express');
 const upload = require('../middleware/upload');
 const authenticateToken = require('../middleware/auth');
-
+const requireAdmin = require('../middleware/admin');
 const router = express.Router();
 
 const {
@@ -10,7 +10,9 @@ const {
     getAllExpenses,
     getExpenseBillPhoto,
     deleteExpense,
-    getExpensesByDateRange
+    getExpensesByDateRange,
+    getExpenseDetails,
+    approveExpenses
 
 } = require('../controllers/expense_controller');
 router.get(
@@ -39,9 +41,20 @@ router.get(
 );
 
 
+//GET ALL EXPENSE admin
+router.get(
+    '/expense-details',
+    requireAdmin,
+    getExpenseDetails
+);
 
 
-
+//expense Approvel
+router.post(
+    '/expense-approve',
+    requireAdmin,
+    approveExpenses
+);
 
 //UPDATE
 router.patch(

@@ -986,12 +986,538 @@ const deleteExpense = async (req, res) => {
     }
 };
 
+//admin esxpense details
+const getExpenseDetails = async (req, res) => {
+    try {
+        const {
+            startDate,
+            endDate,
+            isApproved,
+            search = "",
+            expenseType = "",
+            page = 1,
+            limit = 10,
+        } = req.query;
+
+
+        const userId = req.user?.user_emp_key;
+
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid access token",
+            });
+        }
+
+        const pool = await poolPromise;
+
+        // 2. Check whether logged-in user is Admin
+        const adminResult = await pool.request()
+            .input("id", sql.Int, userId)
+            .query(`
+                SELECT Usr_grp
+                FROM Users
+                WHERE Usr_EmpId = @id
+            `);
+
+        if (adminResult.recordset.length === 0) {
+            return res.status(401).json({
+                success: false,
+                message: "User not found",
+            });
+        }
+
+        const userGroup = adminResult.recordset[0].Usr_grp;
+
+        if (userGroup !== "Administrator") {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied. Admin permission required",
+            });
+        }
+        // --------------------------------
+        // 1. Default date: Current month
+        // --------------------------------
+
+        const today = new Date();
+
+        const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+
+            return `${year}-${month}-${day}`;
+        };
+
+        const fromDate =
+            startDate ||
+            formatDate(
+                new Date(today.getFullYear(), today.getMonth(), 1)
+            );
+
+        const toDate = endDate || formatDate(today);
+
+        // --------------------------------
+        // 2. Pagination
+        // --------------------------------
+
+        const currentPage = Math.max(parseInt(page) || 1, 1);
+
+        const pageLimit = Math.min(
+            Math.max(parseInt(limit) || 10, 1),
+            100
+        );
+
+        const offset = (currentPage - 1) * pageLimit;
+
+        // --------------------------------
+        // 3. Approval filter
+        // --------------------------------
+
+        let approvedValue = null;
+
+        if (isApproved === "true" || isApproved === "1") {
+            approvedValue = 1;
+        } else if (isApproved === "false" || isApproved === "0") {
+            approvedValue = 0;
+        }
+
+        // --------------------------------
+        // 4. Database
+        // --------------------------------
+
+
+        const request = pool.request();
+
+        request.input("startDate", sql.Date, fromDate);
+        request.input("endDate", sql.Date, toDate);
+        request.input("isApproved", sql.Bit, approvedValue);
+        request.input("search", sql.NVarChar, search);
+        request.input("expenseType", sql.NVarChar, expenseType);
+        request.input("offset", sql.Int, offset);
+        request.input("limit", sql.Int, pageLimit);
+
+        // --------------------------------
+        // 5. SQL Query
+        // --------------------------------
+
+        const result = await request.query(`
+
+            SELECT
+                exp.expense_id,
+                exp.user_id,
+
+                acc.AhMst_pName AS name,
+                acc.AhMst_Key AS proId,
+
+                exp.expense_type AS expenseCategory,
+
+                clinic.clinic_name AS clinicName,
+
+                exp.description,
+                exp.expense_date AS expenseDate,
+               exp.expense_id AS expenseId,
+
+CASE
+    WHEN exp.bill_photo IS NOT NULL THEN 1
+    ELSE 0
+END AS has_bill_photo,
+                exp.expense_amount AS expenseAmount,
+                exp.approved_amount AS approvedAmount,
+
+                exp.person_count AS personCount
+
+            INTO #FilteredExpenses
+
+            FROM all_expense_details exp
+
+            LEFT JOIN AccountHeads_Mst acc
+                ON acc.AhMst_Key = exp.user_id
+
+            LEFT JOIN AllClinicDetails clinic
+                ON clinic.clinic_id = exp.clinic_id
+
+            WHERE
+
+                -- Date filter
+                exp.expense_date >= @startDate
+                AND exp.expense_date < DATEADD(
+                    DAY,
+                    1,
+                    @endDate
+                )
+
+                -- Approval filter
+                AND (
+                    @isApproved IS NULL
+
+                    OR (
+                        @isApproved = 1
+                        AND exp.approved_amount IS NOT NULL
+                    )
+
+                    OR (
+                        @isApproved = 0
+                        AND exp.approved_amount IS NULL
+                    )
+                )
+
+                -- Expense type filter
+                AND (
+                    @expenseType = ''
+                    OR exp.expense_type = @expenseType
+                )
+
+                -- Employee name search
+                AND (
+                    @search = ''
+                    OR acc.AhMst_pName LIKE '%' + @search + '%'
+                );
+
+
+            -- --------------------------------
+            -- 6. Summary
+            -- --------------------------------
+
+            SELECT
+
+                ISNULL(
+                    SUM(expenseAmount),
+                    0
+                ) AS totalClaimedAmount,
+
+                COUNT(*) AS totalClaimsCount,
+
+                ISNULL(
+                    SUM(approvedAmount),
+                    0
+                ) AS totalApprovedAmount,
+
+                COUNT(approvedAmount) AS approvedClaimsCount
+
+            FROM #FilteredExpenses;
+
+
+            -- --------------------------------
+            -- 7. Expense details
+            -- --------------------------------
+
+            SELECT
+
+                expense_id AS expenseId,
+                user_id AS userId,
+
+                name,
+              
+
+                expenseCategory,
+                clinicName,
+
+                description,
+                expenseDate,
+
+                has_bill_photo,
+
+                expenseAmount,
+                approvedAmount,
+
+                personCount
+
+            FROM #FilteredExpenses
+
+            ORDER BY
+                expenseDate DESC,
+                expense_id DESC
+
+            OFFSET @offset ROWS
+
+            FETCH NEXT @limit ROWS ONLY;
+
+
+            -- --------------------------------
+            -- 8. Pagination
+            -- --------------------------------
+
+            SELECT
+
+                COUNT(*) AS totalRecords,
+
+                CEILING(
+                    COUNT(*) * 1.0 / @limit
+                ) AS totalPages,
+
+                @limit AS limit
+
+            FROM #FilteredExpenses;
+
+
+            DROP TABLE #FilteredExpenses;
+
+        `);
+
+        // --------------------------------
+        // 9. Response
+        // --------------------------------
+
+        const summary = result.recordsets[0][0];
+
+        const data = result.recordsets[1].map((expense) => ({
+            ...expense,
+
+            receiptPhotoUrl:
+                expense.has_bill_photo === 1
+                    ? `${BASE_URL}/api/expense/${expense.expenseId}/bill-photo`
+                    : null,
+
+            has_bill_photo: undefined,
+        }));
+
+        const pagination = result.recordsets[2][0];
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "Expense details fetched successfully",
+
+            totalClaimedAmount: summary.totalClaimedAmount,
+
+            totalClaimsCount: summary.totalClaimsCount,
+
+            totalApprovedAmount: summary.totalApprovedAmount,
+
+            approvedClaimsCount: summary.approvedClaimsCount,
+
+            data,
+
+            pagination: {
+                totalPages: pagination.totalPages,
+                limit: pagination.limit,
+                totalRecords: pagination.totalRecords,
+                currentPage,
+            },
+
+        });
+
+    } catch (error) {
+
+        console.error("Get Expense Details Error:", error);
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "Failed to fetch expense details",
+
+            error: error.message,
+
+        });
+    }
+};
+
+//expense approvel
+const approveExpenses = async (req, res) => {
+    const expenses = req.body;
+
+    if (!Array.isArray(expenses) || expenses.length === 0) {
+        return res.status(400).json({
+            success: false,
+            message: "Please provide expense details",
+        });
+    }
+    const userId = req.user?.user_emp_key;
+
+    if (!userId) {
+        return res.status(401).json({
+            success: false,
+            message: "Invalid access token",
+        });
+    }
+
+    const pool = await poolPromise;
+
+    // 2. Check whether logged-in user is Admin
+    const adminResult = await pool.request()
+        .input("id", sql.Int, userId)
+        .query(`
+                SELECT Usr_grp
+                FROM Users
+                WHERE Usr_EmpId = @id
+            `);
+
+    if (adminResult.recordset.length === 0) {
+        return res.status(401).json({
+            success: false,
+            message: "User not found",
+        });
+    }
+
+    const userGroup = adminResult.recordset[0].Usr_grp;
+
+    if (userGroup !== "Administrator") {
+        return res.status(403).json({
+            success: false,
+            message: "Access denied. Admin permission required",
+        });
+    }
+
+    // Validate request body
+    for (const expense of expenses) {
+        if (
+            !Number.isInteger(Number(expense.expenseId)) ||
+            expense.expenseAmount == null ||
+            !Number.isFinite(Number(expense.expenseAmount)) ||
+            Number(expense.expenseAmount) < 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid expense ID or approved amount",
+            });
+        }
+    }
+
+    // Prevent duplicate expense IDs in the same request
+    const expenseIds = expenses.map((item) => Number(item.expenseId));
+
+    if (new Set(expenseIds).size !== expenseIds.length) {
+        return res.status(400).json({
+            success: false,
+            message: "Duplicate expense IDs are not allowed",
+        });
+    }
+
+    let transaction;
+
+    try {
+        const pool = await poolPromise;
+
+        transaction = new sql.Transaction(pool);
+
+        await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+
+        for (const expense of expenses) {
+            const expenseId = Number(expense.expenseId);
+            const approvedAmount = Number(expense.expenseAmount);
+
+            // 1. Get expense details and lock the row
+            const expenseResult = await new sql.Request(transaction)
+                .input("expenseId", sql.Int, expenseId)
+                .query(`
+                    SELECT
+                        expense_id,
+                        clinic_id,
+                        expense_amount,
+                        approved_amount,
+                        approved
+                    FROM all_expense_details WITH (UPDLOCK, HOLDLOCK)
+                    WHERE expense_id = @expenseId
+                `);
+
+            if (expenseResult.recordset.length === 0) {
+                throw new Error(
+                    `Expense ID ${expenseId} not found`
+                );
+            }
+
+            const expenseDetails = expenseResult.recordset[0];
+
+            // 2. Check already approved
+            if (
+                expenseDetails.approved === true ||
+                expenseDetails.approved === 1 ||
+                expenseDetails.approved_amount != null
+            ) {
+                throw new Error(
+                    `Expense ID ${expenseId} is already approved`
+                );
+            }
+
+            // 3. Validate approved amount
+            if (
+                approvedAmount > Number(expenseDetails.expense_amount)
+            ) {
+                throw new Error(
+                    `Approved amount cannot exceed claimed amount for expense ID ${expenseId}`
+                );
+            }
+
+            const clinicId = expenseDetails.clinic_id;
+
+            // 4. Update clinic approved amount
+            const clinicResult = await new sql.Request(transaction)
+                .input("clinicId", sql.Int, clinicId)
+                .input(
+                    "approvedAmount",
+                    sql.Decimal(18, 2),
+                    approvedAmount
+                )
+                .query(`
+                    UPDATE AllClinicDetails
+                    SET approved_amount =
+                        ISNULL(approved_amount, 0) + @approvedAmount
+                    WHERE clinic_id = @clinicId;
+
+                    SELECT @@ROWCOUNT AS affectedRows;
+                `);
+
+            if (clinicResult.recordset[0].affectedRows === 0) {
+                throw new Error(
+                    `Clinic ID ${clinicId} not found`
+                );
+            }
+
+            // 5. Update expense approval details
+            await new sql.Request(transaction)
+                .input("expenseId", sql.Int, expenseId)
+                .input(
+                    "approvedAmount",
+                    sql.Decimal(18, 2),
+                    approvedAmount
+                )
+                .query(`
+                    UPDATE all_expense_details
+                    SET
+                        approved_amount = @approvedAmount,
+                        approved_date = GETDATE(),
+                        approved = 1
+                    WHERE expense_id = @expenseId
+                `);
+        }
+
+        await transaction.commit();
+
+        return res.status(200).json({
+            success: true,
+            message: "Expenses approved successfully",
+            approvedCount: expenses.length,
+        });
+
+    } catch (error) {
+        if (transaction) {
+            try {
+                await transaction.rollback();
+            } catch (rollbackError) {
+                console.error("Rollback error:", rollbackError);
+            }
+        }
+
+        console.error("Expense approval error:", error);
+
+        return res.status(400).json({
+            success: false,
+            message: error.message || "Failed to approve expenses",
+        });
+    }
+};
+
 module.exports = {
     createExpense,
     patchExpense,
     getAllExpenses,
     getExpenseBillPhoto,
     deleteExpense,
-    getExpensesByDateRange
+    getExpensesByDateRange,
+    getExpenseDetails,
+    approveExpenses,
 
 };
