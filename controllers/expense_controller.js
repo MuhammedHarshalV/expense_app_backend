@@ -1116,6 +1116,7 @@ const getExpenseDetails = async (req, res) => {
 
                 exp.description,
                 exp.expense_date AS expenseDate,
+                exp.entry_date AS entryDate,
                exp.expense_id AS expenseId,
 
 CASE
@@ -1215,6 +1216,7 @@ END AS has_bill_photo,
 
                 description,
                 expenseDate,
+                entryDate,
 
                 has_bill_photo,
 
