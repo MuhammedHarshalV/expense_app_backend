@@ -154,10 +154,9 @@ const getExpenseComparison = async (req, res) => {
             SUM(
                 CASE
                     WHEN LOWER(expense_type) LIKE '%fuel%'
-                      OR LOWER(expense_type) LIKE '%travel%'
                     THEN expense_amount ELSE 0
                 END
-            ) AS fuelTravel,
+            ) AS fuel,
 
             SUM(
                 CASE
@@ -172,7 +171,6 @@ const getExpenseComparison = async (req, res) => {
                     WHEN LOWER(expense_type) NOT LIKE '%food%'
                      AND LOWER(expense_type) NOT LIKE '%lunch%'
                      AND LOWER(expense_type) NOT LIKE '%fuel%'
-                     AND LOWER(expense_type) NOT LIKE '%travel%'
                      AND LOWER(expense_type) NOT LIKE '%hotel%'
                      AND LOWER(expense_type) NOT LIKE '%stay%'
                     THEN expense_amount ELSE 0
@@ -263,12 +261,12 @@ const getExpenseComparison = async (req, res) => {
                 )
             },
 
-            fuelTravel: {
+            fuel: {
                 comparitiveMonth: getCategoryTotal(
-                    "comparison", "fuelTravel"
+                    "comparison", "fuel"
                 ),
                 currentMonth: getCategoryTotal(
-                    "current", "fuelTravel"
+                    "current", "fuel"
                 )
             },
 
@@ -452,9 +450,9 @@ const getMonthlyExpenseDashboard = async (req, res) => {
                           AND expense_date < @currentEnd
                           AND (
                               LOWER(expense_type) LIKE '%fuel%'
-                              OR LOWER(expense_type) LIKE '%travel%'
+                              
                           )
-                    ), 0) AS fuelTravel,
+                    ), 0) AS fuel,
 
 
                     /* CURRENT MONTH - FOOD & LUNCH */
@@ -499,15 +497,15 @@ const getMonthlyExpenseDashboard = async (req, res) => {
                     ), 0) AS hotelStay,
 
 
-                    /* CURRENT MONTH - STATIONERY */
+                    /* CURRENT MONTH - travel */
 
                     COALESCE((
                         SELECT SUM(expense_amount)
                         FROM all_expense_details
                         WHERE expense_date >= @currentStart
                           AND expense_date < @currentEnd
-                          AND LOWER(expense_type) LIKE '%stationery%'
-                    ), 0) AS stationery,
+                          AND LOWER(expense_type) LIKE '%travel%'
+                    ), 0) AS travel,
 
 
                     /* CURRENT MONTH - OTHER EXPENSES */
@@ -519,14 +517,13 @@ const getMonthlyExpenseDashboard = async (req, res) => {
                           AND expense_date < @currentEnd
 
                           AND LOWER(expense_type) NOT LIKE '%fuel%'
-                          AND LOWER(expense_type) NOT LIKE '%travel%'
                           AND LOWER(expense_type) NOT LIKE '%food%'
                           AND LOWER(expense_type) NOT LIKE '%lunch%'
                           AND LOWER(expense_type) NOT LIKE '%medical%'
                           AND LOWER(expense_type) NOT LIKE '%demo%'
                           AND LOWER(expense_type) NOT LIKE '%hotel%'
                           AND LOWER(expense_type) NOT LIKE '%stay%'
-                          AND LOWER(expense_type) NOT LIKE '%stationery%'
+                          AND LOWER(expense_type) NOT LIKE '%travel%'
                     ), 0) AS otherExpenses;
             `);
 
@@ -561,7 +558,7 @@ const getMonthlyExpenseDashboard = async (req, res) => {
                 currentMonth: currentClinic
             },
 
-            fuelTravel: Number(data.fuelTravel || 0),
+            fuel: Number(data.fuel || 0),
 
             foodLunch: Number(data.foodLunch || 0),
 
@@ -569,7 +566,7 @@ const getMonthlyExpenseDashboard = async (req, res) => {
 
             hotelStay: Number(data.hotelStay || 0),
 
-            stationery: Number(data.stationery || 0),
+            travel: Number(data.travel || 0),
 
             others: Number(data.otherExpenses || 0),
 
