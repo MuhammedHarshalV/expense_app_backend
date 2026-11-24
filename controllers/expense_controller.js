@@ -14,6 +14,7 @@ const createExpense = async (req, res) => {
             expense_type,
             description,
             expense_date,
+            person_count,
         } = req.body;
 
         // Validate clinic ID
@@ -66,6 +67,20 @@ const createExpense = async (req, res) => {
                 success: false,
                 message:
                     'Invalid expense_date. Use yyyy-MM-dd format',
+            });
+        }
+        const personCount = Number(person_count);
+
+        if (
+            person_count === undefined ||
+            person_count === null ||
+            person_count === '' ||
+            !Number.isInteger(personCount) ||
+            personCount <= 0
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: 'person_count must be a valid positive integer',
             });
         }
 
@@ -127,6 +142,7 @@ const createExpense = async (req, res) => {
         const result = await pool
             .request()
             .input('clinic_id', sql.Int, clinicId)
+            .input('person_count', sql.Int, personCount)
             .input('user_id', sql.Int, userId)
             .input('expense_amount', sql.Float, amount)
             .input(
@@ -154,6 +170,7 @@ const createExpense = async (req, res) => {
                     clinic_id,
                     user_id,
                     expense_amount,
+                    person_count,
                     expense_type,
                     bill_photo,
                     description,
@@ -162,6 +179,7 @@ const createExpense = async (req, res) => {
                 )
                 OUTPUT INSERTED.expense_id,  
                 INSERTED.expense_amount,
+                  INSERTED.person_count,
                 INSERTED.expense_type,
                 INSERTED.expense_date,
                 INSERTED.entry_date
@@ -169,6 +187,7 @@ const createExpense = async (req, res) => {
                     @clinic_id,
                     @user_id,
                     @expense_amount,
+                       @person_count,
                     @expense_type,
                     @bill_photo,
                     @description,
@@ -207,7 +226,8 @@ const createExpense = async (req, res) => {
                 expense_date: result.recordset[0].expense_date,
                 clinic_name: clinicName,
                 clinic_total_exp: clinicTotalExpense,
-                entry_date: result.recordset[0].entry_date
+                entry_date: result.recordset[0].entry_date,
+                person_count: result.recordset[0].person_count,
             },
         });
     } catch (error) {
@@ -233,7 +253,7 @@ const patchExpense = async (req, res) => {
             expense_amount,
             expense_type,
             description,
-            expense_date,
+            expense_date, person_count,
         } = req.body;
 
         if (!Number.isInteger(expenseId) || expenseId <= 0) {
@@ -276,7 +296,8 @@ const patchExpense = async (req, res) => {
                     expense_type,
                     bill_photo,
                     description,
-                    expense_date
+                    expense_date,
+                      person_count
                 FROM all_expense_details
                 WHERE expense_id = @expense_id
                   AND clinic_id = @clinic_id
@@ -401,7 +422,24 @@ const patchExpense = async (req, res) => {
 
             newExpenseDate = parsedDate;
         }
+        let newPersonCount = oldExpense.person_count;
 
+        if (
+            person_count !== undefined &&
+            person_count !== null &&
+            person_count !== ''
+        ) {
+            newPersonCount = Number(person_count);
+
+            if (!Number.isInteger(newPersonCount) || newPersonCount <= 0) {
+                await transaction.rollback();
+
+                return res.status(400).json({
+                    success: false,
+                    message: 'person_count must be a valid positive integer',
+                });
+            }
+        }
 
 
         // Keep old photo if new file not provided
@@ -419,6 +457,7 @@ const patchExpense = async (req, res) => {
                 sql.NVarChar(50),
                 newExpenseType
             )
+            .input('person_count', sql.Int, newPersonCount)
             .input(
                 'bill_photo',
                 sql.VarBinary(sql.MAX),
@@ -440,6 +479,7 @@ const patchExpense = async (req, res) => {
                 SET
                     expense_amount = @expense_amount,
                     expense_type = @expense_type,
+                     person_count = @person_count,
                     bill_photo = @bill_photo,
                     description = @description,
                     expense_date = @expense_date,
@@ -449,6 +489,7 @@ const patchExpense = async (req, res) => {
                     INSERTED.clinic_id,
                     INSERTED.expense_amount,
                     INSERTED.expense_type,
+                    INSERTED.person_count,
                     INSERTED.expense_date,
                     INSERTED.description,
                     INSERTED.entry_date
@@ -556,6 +597,7 @@ const patchExpense = async (req, res) => {
                     updateResult.recordset[0].expense_date,
 
                 clinic_total_exp: clinicTotalExpense,
+                person_count: updateResult.recordset[0].person_count,
             },
         });
 
@@ -637,6 +679,7 @@ const getAllExpenses = async (req, res) => {
                     description,
                     expense_date,
                     approved_amount,
+                    person_count,
 
                     CASE
                         WHEN bill_photo IS NOT NULL
@@ -661,6 +704,7 @@ const getAllExpenses = async (req, res) => {
             description: expense.description,
             expense_date: expense.expense_date,
             approved_amount: expense.approved_amount,
+            person_count: expense.person_count,
             bill_photo: expense.has_bill_photo === 1
                 ? `${BASE_URL}/api/expense/${expense.expense_id}/bill-photo`
                 : null,
@@ -746,7 +790,7 @@ const getExpensesByDateRange = async (req, res) => {
                     description,
                     expense_date,
                     approved_amount,
-
+person_count,
                     CASE
                         WHEN bill_photo IS NOT NULL
                         THEN 1
@@ -776,6 +820,7 @@ const getExpensesByDateRange = async (req, res) => {
                 expense.has_bill_photo === 1
                     ? `${BASE_URL}/api/expense/${expense.expense_id}/bill-photo`
                     : null,
+            person_count: expense.person_count,
         }));
 
         return res.status(200).json({
